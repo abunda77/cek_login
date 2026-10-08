@@ -35,10 +35,19 @@ except ImportError as exc:  # pragma: no cover
 try:
     from rich.console import Console
     from rich.panel import Panel
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+    )
     from rich.table import Table
     from rich.text import Text
 except ImportError:  # pragma: no cover
     Console = Panel = Table = Text = None
+    Progress = None
 
 APP_NAME = "linux-ssh-security-analyzer"
 APP_VERSION = "0.1.0"
@@ -404,18 +413,18 @@ def build_findings(events: list[SecurityEvent]) -> list[RuleFinding]:
         users = sorted({e.username for e in ip_events if e.username})
         base_evidence = [{"source": e.source, "event_id": e.event_id, "username": e.username, "raw": e.raw} for e in ip_events[:10]]
         if count >= 50:
-            findings.append(RuleFinding("R003", "Aggressive SSH brute-force activity", "HIGH", 0.98, f"Observed {count} failed authentication events from {ip}.", [{"ip": ip, "count": count, "users": users, "events": base_evidence}]))
+            findings.append(RuleFinding("R003", "Aktivitas brute-force SSH yang agresif", "HIGH", 0.98, f"Terdeteksi {count} peristiwa autentikasi gagal dari {ip}.", [{"ip": ip, "count": count, "users": users, "events": base_evidence}]))
         elif count >= 20:
-            findings.append(RuleFinding("R002", "High-volume SSH authentication failures", "MEDIUM", 0.96, f"Observed {count} failed authentication events from {ip}.", [{"ip": ip, "count": count, "users": users, "events": base_evidence}]))
+            findings.append(RuleFinding("R002", "Kegagalan autentikasi SSH bervolume tinggi", "MEDIUM", 0.96, f"Terdeteksi {count} peristiwa autentikasi gagal dari {ip}.", [{"ip": ip, "count": count, "users": users, "events": base_evidence}]))
         elif count >= 5:
-            findings.append(RuleFinding("R001", "Repeated SSH authentication failures", "LOW", 0.92, f"Observed {count} failed authentication events from {ip}.", [{"ip": ip, "count": count, "users": users, "events": base_evidence}]))
+            findings.append(RuleFinding("R001", "Kegagalan autentikasi SSH berulang", "LOW", 0.92, f"Terdeteksi {count} peristiwa autentikasi gagal dari {ip}.", [{"ip": ip, "count": count, "users": users, "events": base_evidence}]))
 
         if count >= 5 and "root" in users:
             sev = "HIGH" if count >= 20 else "MEDIUM"
-            findings.append(RuleFinding("R004", "Privileged account targeted repeatedly", sev, 0.96, f"The root account was targeted in {count} failed events from {ip}.", [{"ip": ip, "count": count, "username": "root"}]))
+            findings.append(RuleFinding("R004", "Akun istimewa menjadi sasaran berulang", sev, 0.96, f"Akun root menjadi sasaran dalam {count} peristiwa gagal dari {ip}.", [{"ip": ip, "count": count, "username": "root"}]))
 
         if len(users) >= 2 and count >= 5:
-            findings.append(RuleFinding("R005", "Multiple usernames targeted from one IP", "MEDIUM", 0.90, f"Source {ip} targeted multiple usernames: {', '.join(users)}.", [{"ip": ip, "usernames": users, "count": count}]))
+            findings.append(RuleFinding("R005", "Beberapa nama pengguna menjadi sasaran dari satu IP", "MEDIUM", 0.90, f"Sumber {ip} menargetkan beberapa nama pengguna: {', '.join(users)}.", [{"ip": ip, "usernames": users, "count": count}]))
 
     successful_by_ip: dict[str, list[SecurityEvent]] = defaultdict(list)
     sessions_by_ip: dict[str, list[SecurityEvent]] = defaultdict(list)
@@ -430,14 +439,14 @@ def build_findings(events: list[SecurityEvent]) -> list[RuleFinding]:
         if failures and successes:
             root_success = any(e.username == "root" for e in successes)
             findings.append(RuleFinding(
-                "R006", "Successful login after repeated failures", "HIGH", 0.94,
-                f"Source {ip} has failed authentication activity followed by a successful login.",
+                "R006", "Login berhasil setelah kegagalan berulang", "HIGH", 0.94,
+                f"Sumber {ip} memiliki aktivitas autentikasi gagal yang diikuti oleh login berhasil.",
                 [{"ip": ip, "failed_count": len(failures), "successful_logins": [e.raw for e in successes[:5]], "root_success": root_success}],
             ))
         if successes and sessions_by_ip.get(ip):
             findings.append(RuleFinding(
-                "R007", "Potentially suspicious active session", "HIGH", 0.97,
-                f"Source {ip} has both suspicious authentication activity and an active session.",
+                "R007", "Sesi aktif yang berpotensi mencurigakan", "HIGH", 0.97,
+                f"Sumber {ip} memiliki aktivitas autentikasi mencurigakan sekaligus sesi aktif.",
                 [{"ip": ip, "failed_count": len(failures), "successful_count": len(successes), "sessions": [e.raw for e in sessions_by_ip[ip][:5]]}],
             ))
 
@@ -448,7 +457,7 @@ def build_findings(events: list[SecurityEvent]) -> list[RuleFinding]:
             successful_users[e.username].add(e.source_ip)
     for user, ips in successful_users.items():
         if user == "root" and len(ips) >= 2:
-            findings.append(RuleFinding("R008", "Privileged account used from multiple remote sources", "MEDIUM", 0.75, f"Root has successful login evidence from {len(ips)} distinct source IPs.", [{"username": user, "ips": sorted(ips)}]))
+            findings.append(RuleFinding("R008", "Akun istimewa digunakan dari beberapa sumber remote", "MEDIUM", 0.75, f"Terdapat bukti login berhasil akun root dari {len(ips)} alamat IP sumber yang berbeda.", [{"username": user, "ips": sorted(ips)}]))
 
     return findings
 
@@ -566,6 +575,7 @@ Tasks:
 8. Never issue commands intended for automatic execution.
 9. Missing collector data means UNKNOWN, not zero.
 10. Return ONLY valid JSON matching the schema given in the user message, including all required nested fields.
+11. Write all human-readable text (summary, finding descriptions, correlations, conclusion, recommendations, uncertainties) in Indonesian (Bahasa Indonesia). Keep JSON keys and the severity enum values (INFO, LOW, MEDIUM, HIGH, CRITICAL) in English.
 
 Severity rules:
 - CRITICAL is reserved for strong evidence of potential successful compromise, especially repeated/high-volume failures followed by a successful login from the same IP while an active session remains from that IP.
@@ -696,10 +706,10 @@ def build_report(config: Config, collectors: list[CollectorResult], events: list
         "final_report": {
             "severity": final_sev,
             "confidence": max([f.confidence for f in findings], default=0.0) if not llm else llm.confidence,
-            "summary": (llm.summary if llm else ("No significant suspicious SSH activity detected in the collected evidence." if not findings else f"Detected {len(findings)} security finding(s) requiring review.")),
-            "conclusion": (llm.conclusion if llm else "LLM analysis was not available; review deterministic findings."),
+            "summary": (llm.summary if llm else ("Tidak ada aktivitas SSH mencurigakan yang signifikan pada bukti yang dikumpulkan." if not findings else f"Terdeteksi {len(findings)} temuan keamanan yang perlu ditinjau.")),
+            "conclusion": (llm.conclusion if llm else "Analisis LLM tidak tersedia; tinjau temuan deterministik."),
             "recommendations": ([r.model_dump() for r in llm.recommendations] if llm else []),
-            "uncertainties": ([*llm.uncertainties] if llm else ["LLM analysis was not available."]),
+            "uncertainties": ([*llm.uncertainties] if llm else ["Analisis LLM tidak tersedia."]),
         },
     }
     return report
@@ -712,41 +722,41 @@ def render_plain(report: dict[str, Any]) -> str:
         " Linux SSH Security Analyzer".ljust(65) + "=",
         "=" * 66,
         f"Host       : {report['host']['hostname']}",
-        f"Collected  : {report['collection']['collected_at']}",
+        f"Diambil    : {report['collection']['collected_at']}",
         "",
-        "Risk",
+        "Risiko",
         "-" * 66,
-        f"Severity   : {final['severity']}",
-        f"Confidence : {final['confidence']:.0%}",
-        f"Score      : {report['risk_score']['score']}/100",
+        f"Keparahan  : {final['severity']}",
+        f"Keyakinan  : {final['confidence']:.0%}",
+        f"Skor       : {report['risk_score']['score']}/100",
         "",
-        "Collector Status",
+        "Status Kolektor",
         "-" * 66,
     ]
     for c in report["collectors"]:
-        lines.append(f"{c['collector']:<24} {c['status']:<20} exit={c['exit_code']}")
-    lines += ["", "Rule Findings", "-" * 66]
+        lines.append(f"{c['collector']:<24} {c['status']:<20} keluar={c['exit_code']}")
+    lines += ["", "Temuan Aturan", "-" * 66]
     if report["rule_findings"]:
         for f in report["rule_findings"]:
             lines.append(f"[{f['severity']}] {f['rule_id']} - {f['title']}")
             lines.append(f"  {f['description']}")
     else:
-        lines.append("No deterministic findings.")
-    lines += ["", "Summary", "-" * 66, final["summary"], "", "Conclusion", "-" * 66, final["conclusion"]]
+        lines.append("Tidak ada temuan deterministik.")
+    lines += ["", "Ringkasan", "-" * 66, final["summary"], "", "Kesimpulan", "-" * 66, final["conclusion"]]
     llm = report.get("llm_analysis")
     if llm:
-        lines += ["", "Correlations", "-" * 66]
+        lines += ["", "Korelasi", "-" * 66]
         for c in llm.get("correlations", []):
-            lines.append(f"- {c['description']} | Risk: {c['risk']}")
-        lines += ["", "Recommendations", "-" * 66]
+            lines.append(f"- {c['description']} | Risiko: {c['risk']}")
+        lines += ["", "Rekomendasi", "-" * 66]
         for r in final.get("recommendations", []):
-            lines.append(f"{r['priority']}. {r['action']} ({r.get('category') or 'GENERAL'})")
+            lines.append(f"{r['priority']}. {r['action']} ({r.get('category') or 'UMUM'})")
             lines.append(f"   {r['reason']}")
-        lines += ["", "Uncertainties", "-" * 66]
+        lines += ["", "Ketidakpastian", "-" * 66]
         for u in final.get("uncertainties", []):
             lines.append(f"- {u}")
     elif report.get("llm_error"):
-        lines += ["", "LLM Analysis", "-" * 66, f"UNAVAILABLE: {report['llm_error']}"]
+        lines += ["", "Analisis LLM", "-" * 66, f"TIDAK TERSEDIA: {report['llm_error']}"]
     lines.append("")
     return "\n".join(lines)
 
@@ -756,32 +766,76 @@ def render_rich(report: dict[str, Any]) -> None:
     final = report["final_report"]
     severity = final["severity"]
     panel = Panel.fit(
-        Text(f"Severity: {severity}\nConfidence: {final['confidence']:.0%}\nRisk score: {report['risk_score']['score']}/100", style="bold"),
+        Text(f"Keparahan: {severity}\nKeyakinan: {final['confidence']:.0%}\nSkor risiko: {report['risk_score']['score']}/100", style="bold"),
         title="Linux SSH Security Analyzer",
         border_style={"INFO": "blue", "LOW": "green", "MEDIUM": "yellow", "HIGH": "red", "CRITICAL": "magenta"}.get(severity, "white"),
     )
     console.print(panel)
-    table = Table(title="Collector Status")
-    table.add_column("Collector")
+    table = Table(title="Status Kolektor")
+    table.add_column("Kolektor")
     table.add_column("Status")
-    table.add_column("Exit")
+    table.add_column("Keluar")
     for c in report["collectors"]:
         table.add_row(c["collector"], c["status"], str(c["exit_code"]))
     console.print(table)
-    console.print(Panel(final["summary"], title="Summary"))
+    console.print(Panel(final["summary"], title="Ringkasan"))
     if report["rule_findings"]:
-        table = Table(title="Rule Findings")
-        table.add_column("Severity")
-        table.add_column("Rule")
-        table.add_column("Finding")
+        table = Table(title="Temuan Aturan")
+        table.add_column("Keparahan")
+        table.add_column("Aturan")
+        table.add_column("Temuan")
         for f in report["rule_findings"]:
             table.add_row(f["severity"], f["rule_id"], f["title"] + "\n" + f["description"])
         console.print(table)
-    console.print(Panel(final["conclusion"], title="Conclusion"))
+    console.print(Panel(final["conclusion"], title="Kesimpulan"))
     for r in final.get("recommendations", []):
         console.print(f"[bold]{r['priority']}.[/bold] {r['action']} - {r['reason']}")
     if report.get("llm_error"):
-        console.print(f"[yellow]LLM unavailable:[/yellow] {report['llm_error']}")
+        console.print(f"[yellow]LLM tidak tersedia:[/yellow] {report['llm_error']}")
+
+
+class _NullProgress:
+    """No-op stand-in used when rich is unavailable or progress is disabled."""
+
+    def add_task(self, *args: Any, **kwargs: Any) -> int:
+        return 0
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def advance(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def remove_task(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+
+def _make_progress(enabled: bool = True) -> Any:
+    """Animated progress bar on stderr.
+
+    Disabled (renders nothing) when rich is missing, when the caller opts out,
+    when stderr is not a TTY, or when NO_COLOR is set. Always returns an object
+    with the same task API so callers never need to branch.
+    """
+    if Progress is None or not enabled:
+        return _NullProgress()
+    show = sys.stderr.isatty() and os.getenv("NO_COLOR") is None
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=Console(stderr=True),
+        transient=True,
+        disable=not show,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -789,6 +843,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="Output JSON only.")
     parser.add_argument("--raw", action="store_true", help="Include raw collector output in JSON/plain output.")
     parser.add_argument("--rules-only", "--no-llm", dest="rules_only", action="store_true", help="Skip LLM analysis.")
+    parser.add_argument("--no-progress", action="store_true", help="Disable the animated progress bar.")
     parser.add_argument("--output", help="Write report to a file.")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
     parser.add_argument("--timeout", type=int, help="Override collector command timeout.")
@@ -813,31 +868,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         WhoCollector(config.command_timeout),
         RecentLoginCollector(config.command_timeout),
     ]
-    results = []
-    for collector in collectors:
-        LOGGER.debug("Running collector %s", collector.name)
-        result = collector.collect()
-        # Bound raw evidence to protect memory/context while preserving status.
-        if len(result.stdout.encode("utf-8", errors="replace")) > config.max_raw_log_bytes:
-            raw = result.stdout.encode("utf-8", errors="replace")[:config.max_raw_log_bytes].decode("utf-8", errors="replace")
-            result.stdout = raw + "\n[TRUNCATED]"
-            result.metadata["truncated"] = True
-            result.metadata["max_raw_log_bytes"] = config.max_raw_log_bytes
-        results.append(result)
+    progress = _make_progress(enabled=not args.no_progress)
+    progress.start()
+    try:
+        collect_task = progress.add_task("Collecting evidence", total=len(collectors))
+        results = []
+        for collector in collectors:
+            LOGGER.debug("Running collector %s", collector.name)
+            progress.update(collect_task, description=f"Collecting {collector.name}")
+            result = collector.collect()
+            # Bound raw evidence to protect memory/context while preserving status.
+            if len(result.stdout.encode("utf-8", errors="replace")) > config.max_raw_log_bytes:
+                raw = result.stdout.encode("utf-8", errors="replace")[:config.max_raw_log_bytes].decode("utf-8", errors="replace")
+                result.stdout = raw + "\n[TRUNCATED]"
+                result.metadata["truncated"] = True
+                result.metadata["max_raw_log_bytes"] = config.max_raw_log_bytes
+            results.append(result)
+            progress.advance(collect_task)
 
-    events = parse_collectors(results)
-    findings = build_findings(events)
-    score = risk_score(findings)
-    det_sev = deterministic_severity(findings, events)
+        events = parse_collectors(results)
+        findings = build_findings(events)
+        score = risk_score(findings)
+        det_sev = deterministic_severity(findings, events)
 
-    llm: LLMReport | None = None
-    llm_error: str | None = None
-    if not args.rules_only:
-        try:
-            llm = LLMAnalyzer(config).analyze(events, results, findings, score, det_sev)
-        except Exception as exc:
-            llm_error = str(exc)
-            LOGGER.warning("LLM analysis unavailable: %s", exc)
+        llm: LLMReport | None = None
+        llm_error: str | None = None
+        if not args.rules_only:
+            analyze_task = progress.add_task("Analyzing evidence with the LLM", total=None)
+            try:
+                llm = LLMAnalyzer(config).analyze(events, results, findings, score, det_sev)
+            except Exception as exc:
+                llm_error = str(exc)
+                LOGGER.warning("LLM analysis unavailable: %s", exc)
+            finally:
+                progress.remove_task(analyze_task)
+    finally:
+        progress.stop()
 
     report = build_report(config, results, events, findings, score, det_sev, llm, llm_error)
     if args.raw:
