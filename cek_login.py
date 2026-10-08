@@ -94,8 +94,18 @@ def confidence(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
+def _env_first(*names: str, default: str = "") -> str:
+    """Return the first non-empty value among env vars, else default."""
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return default
+
+
 @dataclass
 class Config:
+    provider: str = "openai"
     api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
     model: str = ""
@@ -109,8 +119,10 @@ class Config:
     def from_env(cls) -> "Config":
         load_dotenv()
         return cls(
-            api_key=os.getenv("OPENAI_API_KEY", ""),
-            base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+            provider=_env_first("LLM_PROVIDER", default="openai"),
+            # LLM_* are the current names; OPENAI_* kept for backward compatibility.
+            api_key=_env_first("LLM_API_KEY", "OPENAI_API_KEY"),
+            base_url=_env_first("LLM_BASE_URL", "OPENAI_BASE_URL", default="https://api.openai.com/v1").rstrip("/"),
             model=os.getenv("LLM_MODEL", ""),
             llm_timeout=int(os.getenv("LLM_TIMEOUT", "120")),
             llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
@@ -591,7 +603,7 @@ def llm_payload(events: list[SecurityEvent], collectors: list[CollectorResult], 
 class LLMAnalyzer:
     def __init__(self, config: Config):
         if not config.api_key:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
+            raise RuntimeError("LLM_API_KEY is not configured")
         if not config.model:
             raise RuntimeError("LLM_MODEL is not configured")
         self.config = config
