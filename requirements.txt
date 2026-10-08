@@ -1,2 +1,6 @@
 # This project uses Python standard library only.
 # No third-party packages are required.
+openai>=1.0.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+rich>=13.0.0
